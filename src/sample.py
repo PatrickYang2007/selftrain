@@ -66,7 +66,8 @@ class VLLMGenerator:
                  max_new_tokens: int, seed: int, top_logprobs: int = 0) -> list[list[Completion]]:
         from vllm import SamplingParams
 
-        # One seed per prompt keeps each problem's samples independent of batching order.
+        # One seed per prompt keeps each problem's samples independent of batching order. vLLM
+        # seeds the j-th of n samples with seed + j, so prompts are spaced n apart.
         params = [
             SamplingParams(
                 n=n,
@@ -74,7 +75,7 @@ class VLLMGenerator:
                 top_p=1.0,
                 repetition_penalty=1.0,
                 max_tokens=max_new_tokens,
-                seed=None if temperature == 0 else seed + i,
+                seed=None if temperature == 0 else seed + i * n,
                 logprobs=top_logprobs or None,
             )
             for i in range(len(prompts))
@@ -184,6 +185,8 @@ def load_tokenizer(model: str):
 
 
 def score_completion(comp: Completion, gt: float) -> dict:
+    """A response cut off at max_new_tokens has no final answer, so it is never correct,
+    even if the last-number fallback happens to land on the ground truth."""
     ex = extract_answer(comp.text)
     return {
         "response": comp.text,
@@ -191,7 +194,7 @@ def score_completion(comp: Completion, gt: float) -> dict:
         "finish_reason": comp.finish_reason,
         "pred": ex.value,
         "extract_method": ex.method,
-        "correct": is_correct(ex.value, gt),
+        "correct": comp.finish_reason != "length" and is_correct(ex.value, gt),
     }
 
 

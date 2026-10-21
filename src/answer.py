@@ -8,7 +8,8 @@ Extraction rule (PLAN.md's rule plus a \\boxed{} step):
    it, up to the end of the first non-empty line. If that text contains `=`, keep only the part
    after the last `=` (so "Answer: 5 + 3 = 8" gives 8). Then take the first number in it.
    `$`, `%`, thousands commas, and trailing periods are ignored. Simple fractions (`3/4`) are
-   allowed here.
+   allowed here. Skipped when a `\\boxed{}` comes after the marker: in
+   "**Final Answer:**\\nIn 2010 the car is worth \\boxed{23238}" the box is the answer.
 2. Otherwise, the last `\\boxed{...}`, parsed the same way (`\\frac{a}{b}` allowed).
    Qwen2.5-Instruct ignores the requested `Answer:` format on ~94% of base-model responses and
    boxes its answer on ~56%. Without this step, "\\boxed{128} dollars for 16 glasses" scored as 16.
@@ -29,7 +30,7 @@ _FRACTION = r"-?\d+\s*/\s*\d+"
 _NUMBER_RE = re.compile(_NUMBER)
 _ANSWER_LINE_NUMBER_RE = re.compile(rf"(?P<frac>{_FRACTION})|(?P<num>{_NUMBER})")
 # "Answer:", "answer :", "**Answer:**", "Final Answer:", full-width colon.
-_ANSWER_MARKER_RE = re.compile(r"answer\s*\**\s*[:：]\s*\**", re.IGNORECASE)
+_ANSWER_MARKER_RE = re.compile(r"answer[ \t]*\**[ \t]*[:：][ \t]*\**", re.IGNORECASE)
 
 _BOXED_RE = re.compile(r"\\boxed\s*\{")
 _FRAC_CMD_RE = re.compile(r"\\d?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
@@ -51,16 +52,17 @@ class Extraction:
 
 def _clean(text: str) -> str:
     # Unicode minus sign and en dash used as minus; drop currency so "-$5" becomes "-5".
-    # "- 5" stays two tokens on purpose.
-    return text.replace("\u2212", "-").replace("\u2013", "-").replace("$", "")
+    # "- 5" stays two tokens on purpose. LaTeX thousands separator "1{,}000" -> "1,000".
+    text = text.replace("\u2212", "-").replace("\u2013", "-").replace("$", "")
+    return text.replace("{,}", ",")
 
 
-def _last_boxed(text: str) -> str | None:
-    """Contents of the last \\boxed{...}, with nested braces balanced."""
+def _last_boxed(text: str) -> tuple[int, str] | None:
+    """(start offset, contents) of the last \\boxed{...}, with nested braces balanced."""
     matches = list(_BOXED_RE.finditer(text))
     if not matches:
         return None
-    start = matches[-1].end()
+    begin, start = matches[-1].start(), matches[-1].end()
     depth = 1
     for i in range(start, len(text)):
         if text[i] == "{":
@@ -68,8 +70,8 @@ def _last_boxed(text: str) -> str | None:
         elif text[i] == "}":
             depth -= 1
             if depth == 0:
-                return text[start:i]
-    return text[start:]  # unclosed (truncated); parse what is there
+                return begin, text[start:i]
+    return begin, text[start:]  # unclosed (truncated); parse what is there
 
 
 def _to_float(token: str) -> float | None:
@@ -95,17 +97,18 @@ def _parse_answer_text(text: str) -> float | None:
 
 def extract_answer(response: str) -> Extraction:
     text = _clean(response)
-    markers = list(_ANSWER_MARKER_RE.finditer(text))
-    if markers:
-        rest = text[markers[-1].end():]
-        # First non-empty line after the marker ("Answer:\n18" is allowed).
-        line = next((ln for ln in rest.splitlines() if ln.strip()), "")
-        value = _parse_answer_text(_FRAC_CMD_RE.sub(r"\1/\2", line))
-        if value is not None:
-            return Extraction(value, ANSWER_LINE)
     boxed = _last_boxed(text)
+    markers = list(_ANSWER_MARKER_RE.finditer(text))
+    if markers and (boxed is None or boxed[0] < markers[-1].end()):
+        # First non-empty line after the marker ("Answer:\n18" is allowed).
+        rest = text[markers[-1].end():]
+        line = next((ln for ln in rest.splitlines() if ln.strip()), "")
+        if line:
+            value = _parse_answer_text(_FRAC_CMD_RE.sub(r"\1/\2", line))
+            if value is not None:
+                return Extraction(value, ANSWER_LINE)
     if boxed is not None:
-        value = _parse_answer_text(_FRAC_CMD_RE.sub(r"\1/\2", boxed))
+        value = _parse_answer_text(_FRAC_CMD_RE.sub(r"\1/\2", boxed[1]))
         if value is not None:
             return Extraction(value, BOXED)
     numbers = _NUMBER_RE.findall(text)

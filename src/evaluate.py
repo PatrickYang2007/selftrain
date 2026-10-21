@@ -7,6 +7,7 @@ Metrics (all on fixed subsets and fixed seeds, identical across arms and rounds)
 - mean response length in tokens, answer-extraction failure rate (no number at all), which
   extraction route was used (Answer: line / \\boxed / last-number fallback), truncation rate
 - diversity on the k samples per problem: distinct final answers, distinct-2 / distinct-3
+  (also on each sample's first 100 words, since the full-length version falls as responses grow)
 - SVAMP pass@1 greedy
 
 Stage CLI:     python -m src.evaluate --config runs/<arm>/config.yaml --round r
@@ -52,11 +53,15 @@ def majority_answer(preds: list[float | None]) -> float | None:
     return None
 
 
-def distinct_n(texts: list[str], n: int) -> float:
-    """Unique word n-grams / total word n-grams, pooled over the given texts."""
+def distinct_n(texts: list[str], n: int, max_words: int | None = None) -> float:
+    """Unique word n-grams / total word n-grams, pooled over the given texts.
+
+    Longer texts score lower by construction, so `max_words` gives a length-controlled variant
+    computed on each text's first `max_words` words.
+    """
     grams = []
     for t in texts:
-        words = t.split()
+        words = t.split()[:max_words]
         grams.extend(tuple(words[i:i + n]) for i in range(len(words) - n + 1))
     return len(set(grams)) / len(grams) if grams else 0.0
 
@@ -92,13 +97,17 @@ def sampled_metrics(groups: list[list[dict]], gts: list[float], k: int) -> dict:
     for kk in sorted({4, k} & set(range(2, k + 1))):
         out[f"pass@{kk}"] = sum(pass_at_k(len(g), sum(r["correct"] for r in g), kk)
                                 for g in groups) / len(groups)
-    out[f"maj@{k}"] = sum(is_correct(majority_answer([r["pred"] for r in g]), gt)
-                          for g, gt in zip(groups, gts)) / len(groups)
+    # Votes come from complete responses only; a truncated response has no final answer.
+    votes = [[r["pred"] for r in g if r["finish_reason"] != "length"] for g in groups]
+    out[f"maj@{k}"] = sum(is_correct(majority_answer(v), gt)
+                          for v, gt in zip(votes, gts)) / len(groups)
     out["distinct_answers"] = sum(len({canonical(r["pred"]) for r in g if r["pred"] is not None})
                                   for g in groups) / len(groups)
     for n in (2, 3):
         out[f"distinct_{n}"] = sum(distinct_n([r["response"] for r in g], n)
                                    for g in groups) / len(groups)
+        out[f"distinct_{n}_first100w"] = sum(distinct_n([r["response"] for r in g], n, 100)
+                                             for g in groups) / len(groups)
     return out
 
 

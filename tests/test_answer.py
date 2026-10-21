@@ -28,7 +28,6 @@ from src.answer import (
         ("Answer: 18 dollars", 18),
         ("Answer: 25%", 25),
         ("Answer: 3/4", 0.75),
-        ("Answer: \\boxed{42}", 42),
         ("**Answer:** 42", 42),
         ("**Answer: 42**", 42),
         ("answer: 42", 42),
@@ -57,6 +56,7 @@ def test_answer_line(response, value):
         ("\\boxed{x = 5}", 5),
         ("first \\boxed{3}, then corrected: \\boxed{7}", 7),
         ("\\boxed{12", 12),  # truncated before the closing brace
+        ("Answer: \\boxed{42}", 42),
     ],
 )
 def test_boxed(response, value):
@@ -65,8 +65,26 @@ def test_boxed(response, value):
     assert ex.value == pytest.approx(value)
 
 
-def test_answer_line_beats_boxed():
+def test_answer_line_beats_earlier_boxed():
     assert extract_answer("\\boxed{3}\nAnswer: 4").value == 4
+
+
+@pytest.mark.parametrize(
+    "response, value",
+    [
+        ("**Final Answer:**\nIn 2010 the car is worth \\boxed{23238}", 23238),
+        ("**State the final answer:**\nThe total for 500 computers is:\n\\boxed{385000}", 385000),
+        ("- Answer: 2 hours\nThen the rest.\nTotal: \\boxed{7}", 7),
+    ],
+)
+def test_later_boxed_beats_answer_line(response, value):
+    ex = extract_answer(response)
+    assert ex.method == BOXED
+    assert ex.value == value
+
+
+def test_latex_thousands_separator():
+    assert extract_answer("\\boxed{1{,}000}").value == 1000
 
 
 def test_boxed_without_number_falls_back():
