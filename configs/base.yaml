@@ -1,0 +1,47 @@
+# Shared hyperparameters. Arm configs inherit this file and set `arm`.
+model_name: Qwen/Qwen2.5-0.5B-Instruct
+backend: vllm                 # vllm (cluster) | hf (laptop / no vLLM)
+runs_dir: runs                # relative to the repo root; symlink it to scratch on the cluster
+
+# Seeds. data_seed fixes the pool / eval / OOD subsets and is shared by every run so arms
+# are always compared on the same problems. seed drives sampling and training.
+data_seed: 1234
+seed: 0
+eval_seed: 4321
+
+# Loop
+rounds: 5
+pool_size: 2000
+samples_per_problem: 8
+sample_temperature: 0.8
+max_new_tokens: 512
+keep_per_problem: 2           # cap to avoid easy problems dominating
+dedupe: true                  # drop identical responses to the same problem before the cap
+drop_truncated: true          # never train on samples that hit max_new_tokens
+continue_from_previous: true  # false = STaR style: retrain base model on union of kept data
+
+# Filters
+majority_min_votes: 3
+judge_max_new_tokens: 16
+judge_top_logprobs: 20        # also record P(Yes) on the first judge token (for AUROC)
+
+# Training
+lr: 1.0e-5
+epochs: 1
+batch_size: 32                # effective; micro_batch_size x grad accumulation
+micro_batch_size: 8
+lr_scheduler: cosine
+warmup_ratio: 0.05
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+# Evaluation
+eval_subset: 500
+eval_k: 8
+ood_eval: true
+ood_subset: null              # null = all 1000 SVAMP problems
+
+# vLLM
+gpu_memory_utilization: 0.85
+max_model_len: 2048
+hf_batch_size: 16             # only used by the hf backend
