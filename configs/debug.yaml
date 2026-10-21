@@ -1,0 +1,14 @@
+# Tiny end-to-end check (laptop: backend hf on MPS; cluster: override backend=vllm).
+# Run one arm with:  python -m src.loop --config configs/debug.yaml --set arm=self_judge
+inherit: base.yaml
+arm: oracle
+run_name: "debug_{arm}"
+backend: hf
+rounds: 1
+pool_size: 50
+samples_per_problem: 2
+eval_subset: 50
+eval_k: 2
+ood_subset: 50
+micro_batch_size: 4
+batch_size: 8

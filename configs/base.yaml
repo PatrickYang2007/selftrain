@@ -29,7 +29,7 @@ judge_top_logprobs: 20        # also record P(Yes) on the first judge token (for
 lr: 1.0e-5
 epochs: 1
 batch_size: 32                # effective; micro_batch_size x grad accumulation
-micro_batch_size: 8
+micro_batch_size: 4           # 8 runs out of memory on 24 GB A5000s (152k-vocab logits)
 lr_scheduler: cosine
 warmup_ratio: 0.05
 weight_decay: 0.0
