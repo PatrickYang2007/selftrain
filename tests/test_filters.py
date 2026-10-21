@@ -209,3 +209,14 @@ def test_distinct_n():
     assert distinct_n(["a b c", "d e f"], 2) == 1.0
     assert distinct_n(["a"], 2) == 0.0
     assert distinct_n(["a b c d", "a b x y"], 2, max_words=2) == 0.5
+
+
+def test_paired_bootstrap():
+    from src.plots import paired_bootstrap
+
+    a = {str(i): i % 2 == 0 for i in range(200)}
+    d, lo, hi = paired_bootstrap(a, a)
+    assert d == 0 and lo == 0 and hi == 0
+    b = {k: False for k in a}
+    d, lo, hi = paired_bootstrap(a, b)
+    assert d == 0.5 and lo < 0.5 < hi
