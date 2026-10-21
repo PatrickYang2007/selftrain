@@ -7,6 +7,8 @@ A filter maps every pool sample to accepted / rejected:
               tied with another, get nothing accepted. Truncated samples have no final answer:
               they neither vote nor get accepted.
 - self_judge: the current model says "Yes" when asked whether the sample is correct.
+- external_judge: the same Yes/No question answered by a fixed, stronger model (`judge_model`),
+              to separate "the judge is weak" from "the model is judging itself".
 
 Filter quality (precision / recall vs ground truth, self-reported vs true accuracy) is measured
 on that raw accept decision over the whole pool. Then the same selection runs for every arm:
@@ -34,7 +36,7 @@ from src.common import (
     write_jsonl,
 )
 
-ARMS = ("oracle", "majority", "self_judge")
+ARMS = ("oracle", "majority", "self_judge", "external_judge")
 
 
 def group_by_problem(samples: list[dict]) -> dict[str, list[int]]:
@@ -165,8 +167,10 @@ def apply_filter(cfg: dict, r: int) -> None:
         votes = [majority_vote([final_answer(samples[i]) for i in idx], cfg["majority_min_votes"])
                  for idx in group_by_problem(samples).values()]
         extra["frac_problems_with_majority"] = sum(v is not None for v in votes) / len(votes)
-    elif arm == "self_judge":
-        accept, extra = _self_judge(cfg, r, samples)
+    elif arm in ("self_judge", "external_judge"):
+        judge = model_path(cfg, r - 1) if arm == "self_judge" else cfg["judge_model"]
+        accept, extra = _judge_filter(cfg, r, samples, judge)
+        extra["judge_model"] = judge
     else:
         raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
 
@@ -183,8 +187,8 @@ def apply_filter(cfg: dict, r: int) -> None:
     print(f"[filter] round {r} {arm}: {stats}")
 
 
-def _self_judge(cfg: dict, r: int, samples: list[dict]) -> tuple[list[bool], dict]:
-    """Judge every unique (problem, response) once with the model that wrote the samples."""
+def _judge_filter(cfg: dict, r: int, samples: list[dict], judge: str) -> tuple[list[bool], dict]:
+    """Judge every unique (problem, response) once with `judge`."""
     from src.judge import run_judge
 
     rd = round_dir(cfg, r)
@@ -199,7 +203,7 @@ def _self_judge(cfg: dict, r: int, samples: list[dict]) -> tuple[list[bool], dic
             if key not in unique:
                 unique[key] = len(items)
                 items.append((s["question"], s["response"]))
-        results = run_judge(model_path(cfg, r - 1), cfg, items)
+        results = run_judge(judge, cfg, items)
         # Temperature-0 verdicts are a function of the input, so duplicates share one verdict.
         judged = [{"problem_id": s["problem_id"], "sample_idx": s["sample_idx"],
                    "correct": s["correct"], **results[unique[(s["problem_id"], s["response"])]]}

@@ -1,0 +1,4 @@
+# Extra arm: the self-judge loop, but a fixed stronger model answers the Yes/No question.
+inherit: base.yaml
+arm: external_judge
+judge_model: Qwen/Qwen2.5-7B-Instruct
