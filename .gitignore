@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 *.tmp
 .DS_Store
+# Write-ups and generated results stay local, out of the repo.
+REPORT.md
+results/
+slurm/env.local.sh

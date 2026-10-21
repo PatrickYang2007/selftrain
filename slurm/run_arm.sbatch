@@ -2,7 +2,7 @@
 # One arm of the self-training loop. Submit through slurm/submit.sh, which sets the log path
 # to runs/<arm>/slurm-%j.out. loop.py resumes, so a requeued or resubmitted job picks up where it
 # stopped. The 5.5h limit keeps gpu_devel (6h cap) eligible. scavenge_gpu is left out: on the
-# scavenge nodes tried (r108u22n01, r106u37n01) jobs could not initialize CUDA at all.
+# scavenge nodes tried, jobs could not initialize CUDA at all.
 #SBATCH --job-name=selftrain
 #SBATCH --partition=gpu,gpu_devel
 #SBATCH --constraint=a100|a5000
